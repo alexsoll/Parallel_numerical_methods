@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define BLOCK_SIZE 3
+#define BLOCK_SIZE 2
 
 class OpenError {};
 class MatrixSizeError {};
@@ -79,6 +79,7 @@ void DiagonalMatrixDecomposition(int offset, int size, int &N, double* A, double
                 U[N * (offset + k) + offset + j] -= mu * U[N * (offset + i) + offset + j];
             }
 
+
             L[N * (offset + k) + offset + i] = mu;
             L[N * (offset + i) + offset + k] = 0;
         }
@@ -91,15 +92,51 @@ void DiagonalMatrixDecomposition(int offset, int size, int &N, double* A, double
     }
 }
 
+void SolveUpper(int offset, int size, int& N, double* A, double* L, double* U) {
+    int row_num;
+    int col_num;
+
+    for (int k = 0; k < N - offset - BLOCK_SIZE; k++) {
+        row_num = offset * N;
+        col_num = offset + BLOCK_SIZE;
+
+        U[row_num + col_num + k] = A[row_num + col_num + k];
+
+        for (int i = 1; i < size; i++) {
+            U[row_num + i * N + col_num + k] = A[row_num + i * N + col_num + k];
+            std::cout << "U" << offset + i << col_num + k << " = " << "A" << offset + i << col_num + k << std::endl;
+
+            for (int j = 0; j < i; j++) {
+                U[row_num + i * N + col_num + k] -= L[row_num + i * N + j] * U[row_num + j * N + col_num + k];
+                
+                std::cout << "U" << row_num + i * N + col_num + k << " (" << U[row_num + i * N + col_num + k] << ") -=" \
+                    << "L" << row_num + i * N + j << " (" << L[row_num + i * N + j] << ") * " \
+                    << "U" << row_num + j * N + col_num + k << " (" << U[row_num + j * N + col_num + k] << ")" << std::endl;
+            }
+        }
+    }
+}
+
+void SolveLower(int offset, int size, int& N, double* A, double* L, double* U) {
+
+}
+
 void LU_Decomposition(double* A, double* L, double* U, int n) {
     for (int offset = 0; offset < n; offset += BLOCK_SIZE) {
-        std::cout << "LU_Decomposition : " << offset << std::endl;
-        if (n - offset < BLOCK_SIZE) {
-            std::cout << "LU_Decomposition. IF " << std::endl;
+        if (n - offset <= BLOCK_SIZE) {
             DiagonalMatrixDecomposition(offset, n - offset, n, &(*A), &(*L), &(*U));
+            //PrintMatrix(&(*U), n);
+            //std::cout << "DIAG IN IF" << std::endl;
+            break;
         }
-        std::cout << "LU_Decomposition. Outside IF" << std::endl;
         DiagonalMatrixDecomposition(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+        //PrintMatrix(&(*U), n);
+        //std::cout << "DIAG OUT IF" << std::endl;
+
+        SolveUpper(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+        //PrintMatrix(&(*U), n);
+        //std::cout << "DIAG AFTER UPPER" << std::endl;
+        //SolveLower(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
     }
 }
 
@@ -109,7 +146,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    int n = 3;
+    int n = 6;
     double* A;
     const char *file_path = argv[1];
 
@@ -117,8 +154,8 @@ int main(int argc, char* argv[]) {
     double *U = new double[n * n * sizeof(double)];
 
     A = ReadMatrixFromFile(file_path, n);
-    GenerateMatrix(3, &(*L));
-    GenerateMatrix(3, &(*U));
+    GenerateMatrix(6, &(*L));
+    GenerateMatrix(6, &(*U));
 
     std::cout << "Matrix A:" << std::endl;
     PrintMatrix(&(*A), n);
