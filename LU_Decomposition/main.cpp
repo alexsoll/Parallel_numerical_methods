@@ -4,7 +4,7 @@
 
 using namespace std;
 
-#define BLOCK_SIZE 2
+#define BLOCK_SIZE 32
 
 class OpenError {};
 class MatrixSizeError {};
@@ -104,22 +104,85 @@ void SolveUpper(int offset, int size, int& N, double* A, double* L, double* U) {
 
         for (int i = 1; i < size; i++) {
             U[row_num + i * N + col_num + k] = A[row_num + i * N + col_num + k];
-            std::cout << "U" << offset + i << col_num + k << " = " << "A" << offset + i << col_num + k << std::endl;
 
             for (int j = 0; j < i; j++) {
-                U[row_num + i * N + col_num + k] -= L[row_num + i * N + j] * U[row_num + j * N + col_num + k];
-                
-                std::cout << "U" << row_num + i * N + col_num + k << " (" << U[row_num + i * N + col_num + k] << ") -=" \
-                    << "L" << row_num + i * N + j << " (" << L[row_num + i * N + j] << ") * " \
-                    << "U" << row_num + j * N + col_num + k << " (" << U[row_num + j * N + col_num + k] << ")" << std::endl;
+                U[row_num + i * N + col_num + k] -= L[row_num + i * N + j + offset] * U[row_num + j * N + col_num + k];
             }
         }
     }
 }
 
 void SolveLower(int offset, int size, int& N, double* A, double* L, double* U) {
+    int row_num;
+    int col_num;
 
+    for (int k = 0; k < N - offset - BLOCK_SIZE; k++) {
+        row_num = (offset + BLOCK_SIZE) * N;
+        col_num = offset;
+
+        L[row_num + k * N + col_num] = A[row_num + k * N + col_num] / U[offset * N + col_num];
+
+        for (int i = 1; i < size; i++) {
+            L[row_num + k * N + col_num + i] = A[row_num + k * N + col_num + i]; // U[offset * N + col_num];
+
+            for (int j = 0; j < i; j++) {
+                L[row_num + k * N + col_num + i] -= L[row_num + k * N + j + offset] * U[(offset + j) * N + col_num + i];
+            }
+
+            L[row_num + k * N + col_num + i] /= U[(offset + i) * N  + col_num + i];
+        }
+    }
 }
+
+void DiagonalSubmatrixLUDecompose(int bias, int squareSize, int matrixSize, const double *A, double *L, double *U) {
+	int N = bias + squareSize;
+
+	int i, j, k;
+	double sum;
+
+	L[bias*(bias + 3)/2] = 1.0;
+	for (j = bias; j < N; j++) {
+		U[j*(j + 1)/2 + bias] = A[bias*matrixSize + j];
+	}
+
+	for (i = bias + 1; i < N; i++) {
+		L[i*(i + 1)/2 + bias] = A[i*matrixSize + bias]/U[bias*(bias + 3)/2];
+		for (j = bias; j < i; j++) {
+			sum = 0.0;
+			for (k = bias; k < j; k++) {
+				sum += L[i*(i + 1)/2 + k]*U[j*(j + 1)/2 + k];
+			}
+			L[i*(i + 1)/2 + j] = (A[i*matrixSize + j] - sum)/U[j*(j + 3)/2];
+		}
+		L[i*(i + 3)/2] = 1.0;
+		for (j = i; j < N; j++) {
+			sum = 0.0;
+			for (k = bias; k < i; k++) {
+				sum += L[i*(i + 1)/2 + k]*U[j*(j + 1)/2 + k];
+			}
+			U[j*(j + 1)/2 + i] = A[i*matrixSize + j] - sum;
+		}
+	}
+}
+
+void UpdateDiagonalSubmatrix(int offset, int size, int& N, double* A, double* L, double* U) {
+
+    for (int i = 0; i < N - offset - BLOCK_SIZE; i++) {
+        for (int j = 0; j < N - offset - BLOCK_SIZE; j++) {
+            double sum = 0;
+
+            for (int k = 0; k < BLOCK_SIZE; k++) {
+                //std::cout << "L[" << (offset + BLOCK_SIZE + i) * N + k << "] = " << L[(offset + BLOCK_SIZE + i) * N + k] << std::endl;
+                //std::cout << "U[" << (offset + k) * N + offset + BLOCK_SIZE + j  << "] = " << U[(offset + k) * N + offset + BLOCK_SIZE + j] << std::endl;
+                sum += L[(offset + BLOCK_SIZE + i) * N + k + offset] * U[(offset + k) * N + offset + BLOCK_SIZE + j];
+            }
+
+            //std::cout << " >> A[" << (offset + BLOCK_SIZE + i) * N + offset + BLOCK_SIZE + j << "]" << std::endl;
+            A[(offset + BLOCK_SIZE + i) * N + offset + BLOCK_SIZE + j] -= sum;  //(offset + BLOCK_SIZE) * N + i * (N - offset - BLOCK_SIZE) + j + offset + BLOCK_SIZE
+        }
+    }
+}
+
 
 void LU_Decomposition(double* A, double* L, double* U, int n) {
     for (int offset = 0; offset < n; offset += BLOCK_SIZE) {
@@ -136,7 +199,11 @@ void LU_Decomposition(double* A, double* L, double* U, int n) {
         SolveUpper(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
         //PrintMatrix(&(*U), n);
         //std::cout << "DIAG AFTER UPPER" << std::endl;
-        //SolveLower(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+        SolveLower(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+
+        UpdateDiagonalSubmatrix(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+        //PrintMatrix(&(*A), n);
+
     }
 }
 
@@ -157,14 +224,14 @@ int main(int argc, char* argv[]) {
     GenerateMatrix(6, &(*L));
     GenerateMatrix(6, &(*U));
 
-    std::cout << "Matrix A:" << std::endl;
+    /*std::cout << "Matrix A:" << std::endl;
     PrintMatrix(&(*A), n);
     std::cout << "Matrix L:" << std::endl;
     PrintMatrix(&(*L), n);
     std::cout << "Matrix U:" << std::endl;
     PrintMatrix(&(*U), n);
 
-    std::cout << "Calculation..." << std::endl;
+    std::cout << "Calculation..." << std::endl;*/
     LU_Decomposition(&(*A), &(*L), &(*U), n);
     std::cout << "Calculation...DONE" << std::endl;
 
