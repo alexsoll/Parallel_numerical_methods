@@ -96,6 +96,7 @@ void SolveUpper(int offset, int size, int& N, double* A, double* L, double* U) {
     int row_num;
     int col_num;
 
+    #pragma omp parallel for private(row_num, col_num)
     for (int k = 0; k < N - offset - BLOCK_SIZE; k++) {
         row_num = offset * N;
         col_num = offset + BLOCK_SIZE;
@@ -116,6 +117,7 @@ void SolveLower(int offset, int size, int& N, double* A, double* L, double* U) {
     int row_num;
     int col_num;
 
+    #pragma omp parallel for private(row_num, col_num)
     for (int k = 0; k < N - offset - BLOCK_SIZE; k++) {
         row_num = (offset + BLOCK_SIZE) * N;
         col_num = offset;
@@ -134,51 +136,19 @@ void SolveLower(int offset, int size, int& N, double* A, double* L, double* U) {
     }
 }
 
-void DiagonalSubmatrixLUDecompose(int bias, int squareSize, int matrixSize, const double *A, double *L, double *U) {
-	int N = bias + squareSize;
-
-	int i, j, k;
-	double sum;
-
-	L[bias*(bias + 3)/2] = 1.0;
-	for (j = bias; j < N; j++) {
-		U[j*(j + 1)/2 + bias] = A[bias*matrixSize + j];
-	}
-
-	for (i = bias + 1; i < N; i++) {
-		L[i*(i + 1)/2 + bias] = A[i*matrixSize + bias]/U[bias*(bias + 3)/2];
-		for (j = bias; j < i; j++) {
-			sum = 0.0;
-			for (k = bias; k < j; k++) {
-				sum += L[i*(i + 1)/2 + k]*U[j*(j + 1)/2 + k];
-			}
-			L[i*(i + 1)/2 + j] = (A[i*matrixSize + j] - sum)/U[j*(j + 3)/2];
-		}
-		L[i*(i + 3)/2] = 1.0;
-		for (j = i; j < N; j++) {
-			sum = 0.0;
-			for (k = bias; k < i; k++) {
-				sum += L[i*(i + 1)/2 + k]*U[j*(j + 1)/2 + k];
-			}
-			U[j*(j + 1)/2 + i] = A[i*matrixSize + j] - sum;
-		}
-	}
-}
 
 void UpdateDiagonalSubmatrix(int offset, int size, int& N, double* A, double* L, double* U) {
 
+    #pragma omp parallel for if (N - offset > 1000)
     for (int i = 0; i < N - offset - BLOCK_SIZE; i++) {
         for (int j = 0; j < N - offset - BLOCK_SIZE; j++) {
             double sum = 0;
 
             for (int k = 0; k < BLOCK_SIZE; k++) {
-                //std::cout << "L[" << (offset + BLOCK_SIZE + i) * N + k << "] = " << L[(offset + BLOCK_SIZE + i) * N + k] << std::endl;
-                //std::cout << "U[" << (offset + k) * N + offset + BLOCK_SIZE + j  << "] = " << U[(offset + k) * N + offset + BLOCK_SIZE + j] << std::endl;
                 sum += L[(offset + BLOCK_SIZE + i) * N + k + offset] * U[(offset + k) * N + offset + BLOCK_SIZE + j];
             }
 
-            //std::cout << " >> A[" << (offset + BLOCK_SIZE + i) * N + offset + BLOCK_SIZE + j << "]" << std::endl;
-            A[(offset + BLOCK_SIZE + i) * N + offset + BLOCK_SIZE + j] -= sum;  //(offset + BLOCK_SIZE) * N + i * (N - offset - BLOCK_SIZE) + j + offset + BLOCK_SIZE
+            A[(offset + BLOCK_SIZE + i) * N + offset + BLOCK_SIZE + j] -= sum;
         }
     }
 }
@@ -188,21 +158,23 @@ void LU_Decomposition(double* A, double* L, double* U, int n) {
     for (int offset = 0; offset < n; offset += BLOCK_SIZE) {
         if (n - offset <= BLOCK_SIZE) {
             DiagonalMatrixDecomposition(offset, n - offset, n, &(*A), &(*L), &(*U));
-            //PrintMatrix(&(*U), n);
-            //std::cout << "DIAG IN IF" << std::endl;
             break;
         }
+
         DiagonalMatrixDecomposition(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
-        //PrintMatrix(&(*U), n);
-        //std::cout << "DIAG OUT IF" << std::endl;
 
-        SolveUpper(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
-        //PrintMatrix(&(*U), n);
-        //std::cout << "DIAG AFTER UPPER" << std::endl;
-        SolveLower(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
-
+        #pragma omp parallel sections 
+        {
+            #pragma omp section 
+            {
+                SolveUpper(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+            }
+            #pragma omp section 
+            {
+                SolveLower(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+            }
+        }
         UpdateDiagonalSubmatrix(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
-        //PrintMatrix(&(*A), n);
 
     }
 }
@@ -224,22 +196,8 @@ int main(int argc, char* argv[]) {
     GenerateMatrix(6, &(*L));
     GenerateMatrix(6, &(*U));
 
-    /*std::cout << "Matrix A:" << std::endl;
-    PrintMatrix(&(*A), n);
-    std::cout << "Matrix L:" << std::endl;
-    PrintMatrix(&(*L), n);
-    std::cout << "Matrix U:" << std::endl;
-    PrintMatrix(&(*U), n);
-
-    std::cout << "Calculation..." << std::endl;*/
     LU_Decomposition(&(*A), &(*L), &(*U), n);
-    std::cout << "Calculation...DONE" << std::endl;
-
-    std::cout << "Matrix A:" << std::endl;
-    PrintMatrix(&(*A), n);
-    std::cout << "Matrix L:" << std::endl;
     PrintMatrix(&(*L), n);
-    std::cout << "Matrix U:" << std::endl;
     PrintMatrix(&(*U), n);
 
     return 0;
