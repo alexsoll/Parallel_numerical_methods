@@ -1,10 +1,10 @@
 #include <iostream>
-#include <omp.h>
+#include "omp.h"
 #include <fstream>
 
 using namespace std;
 
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 64
 
 class OpenError {};
 class MatrixSizeError {};
@@ -56,7 +56,15 @@ double* ReadMatrixFromFile(const char* file, int& n) {
 void GenerateMatrix(int size, double* A) {
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
-            //A[i * size + j] = rand() % 100 + 2;
+            A[i * size + j] = rand() % 10 + 2;
+        }
+
+    }
+}
+
+void ZeroMatrix(int size, double* A) {
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
             A[i * size + j] = 0;
         }
     }
@@ -96,7 +104,7 @@ void SolveUpper(int offset, int size, int& N, double* A, double* L, double* U) {
     int row_num;
     int col_num;
 
-    #pragma omp parallel for private(row_num, col_num)
+#pragma omp parallel for private(row_num, col_num)
     for (int k = 0; k < N - offset - BLOCK_SIZE; k++) {
         row_num = offset * N;
         col_num = offset + BLOCK_SIZE;
@@ -117,21 +125,21 @@ void SolveLower(int offset, int size, int& N, double* A, double* L, double* U) {
     int row_num;
     int col_num;
 
-    #pragma omp parallel for private(row_num, col_num)
+#pragma omp parallel for private(row_num, col_num)
     for (int k = 0; k < N - offset - BLOCK_SIZE; k++) {
-        row_num = (offset + BLOCK_SIZE) * N;
+        row_num = (offset + BLOCK_SIZE + k) * N;
         col_num = offset;
 
-        L[row_num + k * N + col_num] = A[row_num + k * N + col_num] / U[offset * N + col_num];
+        L[row_num + col_num] = A[row_num + col_num] / U[offset * N + col_num];
 
         for (int i = 1; i < size; i++) {
-            L[row_num + k * N + col_num + i] = A[row_num + k * N + col_num + i]; // U[offset * N + col_num];
+            L[row_num + col_num + i] = A[row_num + col_num + i];
 
             for (int j = 0; j < i; j++) {
-                L[row_num + k * N + col_num + i] -= L[row_num + k * N + j + offset] * U[(offset + j) * N + col_num + i];
+                L[row_num + col_num + i] -= L[row_num + j + offset] * U[(offset + j) * N + col_num + i];
             }
 
-            L[row_num + k * N + col_num + i] /= U[(offset + i) * N  + col_num + i];
+            L[row_num + col_num + i] /= U[(offset + i) * N  + col_num + i];
         }
     }
 }
@@ -139,16 +147,21 @@ void SolveLower(int offset, int size, int& N, double* A, double* L, double* U) {
 
 void UpdateDiagonalSubmatrix(int offset, int size, int& N, double* A, double* L, double* U) {
 
-    #pragma omp parallel for if (N - offset > 1000)
+    int row_offset;
+
+#pragma omp parallel for if (N - offset > 400) private(row_offset)
     for (int i = 0; i < N - offset - BLOCK_SIZE; i++) {
+
+        row_offset = (offset + BLOCK_SIZE + i) * N;
+
         for (int j = 0; j < N - offset - BLOCK_SIZE; j++) {
             double sum = 0;
 
             for (int k = 0; k < BLOCK_SIZE; k++) {
-                sum += L[(offset + BLOCK_SIZE + i) * N + k + offset] * U[(offset + k) * N + offset + BLOCK_SIZE + j];
+                sum += L[row_offset + k + offset] * U[(offset + k) * N + offset + BLOCK_SIZE + j];
             }
 
-            A[(offset + BLOCK_SIZE + i) * N + offset + BLOCK_SIZE + j] -= sum;
+            A[row_offset + offset + BLOCK_SIZE + j] -= sum;
         }
     }
 }
@@ -163,17 +176,17 @@ void LU_Decomposition(double* A, double* L, double* U, int n) {
 
         DiagonalMatrixDecomposition(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
 
-        #pragma omp parallel sections 
-        {
-            #pragma omp section 
-            {
-                SolveUpper(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
-            }
-            #pragma omp section 
-            {
-                SolveLower(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
-            }
-        }
+#pragma omp parallel sections
+{
+    #pragma omp section 
+    {
+        SolveUpper(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+    }
+    #pragma omp section 
+    {
+        SolveLower(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
+    }
+}
         UpdateDiagonalSubmatrix(offset, BLOCK_SIZE, n, &(*A), &(*L), &(*U));
 
     }
@@ -185,20 +198,19 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    int n = 6;
-    double* A;
+    int n = 4000;
+
     const char *file_path = argv[1];
 
     double *L = new double[n * n * sizeof(double)];
     double *U = new double[n * n * sizeof(double)];
+    double* A = new double[n * n * sizeof(double)];
 
-    A = ReadMatrixFromFile(file_path, n);
-    GenerateMatrix(6, &(*L));
-    GenerateMatrix(6, &(*U));
+    GenerateMatrix(n, &(*A));
+    ZeroMatrix(n, &(*L));
+    ZeroMatrix(n, &(*U));
 
     LU_Decomposition(&(*A), &(*L), &(*U), n);
-    PrintMatrix(&(*L), n);
-    PrintMatrix(&(*U), n);
 
     return 0;
 }
