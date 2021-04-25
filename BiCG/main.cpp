@@ -176,29 +176,30 @@ void SLE_Solver_CRS_BICG(CRSMatrix& A, double* b, double eps, int max_iter, doub
 
         GetBeta(r, r_, r_prev, r_prev_, beta, n);
 
-        if (abs(beta) < eps) {
-            //std::cout << "betta < eps" << std::endl;
-            //std::cout << "Result: x = ";
-            //PrintArray(n, x);
-            //std::cout << "Count: " << count << std::endl;
+        if (abs(beta) < 1e-10) {
+            std::cout << "betta < eps" << std::endl;
+            std::cout << "Result: x = ";
+            PrintArray(n, x);
+            std::cout << "Count: " << count << std::endl;
             break;
         }
         if (Norma(r, n) < eps) {
-            //std::cout << "||r|| < eps" << std::endl;
-            //std::cout << "Result: x = ";
-            //PrintArray(n, x);
-            //std::cout << "Count: " << count << std::endl;
+            std::cout << "||r|| < eps" << std::endl;
+            std::cout << "Result: x = ";
+            PrintArray(n, x);
+            std::cout << "Count: " << count << std::endl;
             break;
         }
-        if (count == max_iter) {
-            //std::cout << "Exceeded the number of allowed iterations" << std::endl;
-            //std::cout << "Result: x = ";
-            //PrintArray(n, x);
+        if (count >= max_iter) {
+            std::cout << "Exceeded the number of allowed iterations" << std::endl;
+            std::cout << "Result: x = ";
+            PrintArray(n, x);
             break;
         }
 
         Addition(r, p, p, beta, n);
         Addition(r_, p_, p_, beta, n);
+
     }
 
     delete[] r;
