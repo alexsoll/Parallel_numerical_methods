@@ -113,9 +113,7 @@ double Scalar(double* a, double* b, int & size) {
     return res;
 }
 
-void GetAlpha(double* r, double* r_, CRSMatrix& A, double* p, double* p_, double &alpha) {
-    double* tmp = new double[A.n * sizeof(double)];
-
+void GetAlpha(double* r, double* r_, CRSMatrix& A, double* p, double* p_, double* tmp, double &alpha) {
     Multiplication(A, p, tmp);
 
     alpha = Scalar(r, r_, A.n) / Scalar(tmp, p_, A.n);
@@ -144,21 +142,17 @@ double Norma(double* a, int size) {
 void SLE_Solver_CRS_BICG(CRSMatrix& A, double* b, double eps, int max_iter, double* x, int& count) {
     int n = A.n;
 
-    double* r = new double[n * sizeof(double)];
-    double* r_prev = new double[n * sizeof(double)];
-    double* r_ = new double[n * sizeof(double)];
-    double* r_prev_ = new double[n * sizeof(double)];
-
-    double* p = new double[n * sizeof(double)];
-    double* p_ = new double[n * sizeof(double)];
-
-    double* tmp = new double[n * sizeof(double)];
-
+    double* r = new double[n];
+    double* r_prev = new double[n];
+    double* r_ = new double[n];
+    double* r_prev_ = new double[n];
+    double* p = new double[n];
+    double* p_ = new double[n];
+    double* tmp = new double[n];
     double alpha, beta;
 
     GenerateStartSolution(n, x);
     GetR0(A, x, b, r);
-
     CopyArray(r, r_, n);
     CopyArray(r, p, n);
     CopyArray(r, p_, n);
@@ -169,7 +163,7 @@ void SLE_Solver_CRS_BICG(CRSMatrix& A, double* b, double eps, int max_iter, doub
     while (true) {
         count++;
 
-        GetAlpha(r, r_, A, p, p_, alpha);
+        GetAlpha(r, r_, A, p, p_, tmp, alpha);
         Addition(x, p, x, alpha, n);
 
         Multiplication(A, p, tmp); 
@@ -183,29 +177,37 @@ void SLE_Solver_CRS_BICG(CRSMatrix& A, double* b, double eps, int max_iter, doub
         GetBeta(r, r_, r_prev, r_prev_, beta, n);
 
         if (abs(beta) < eps) {
-            std::cout << "betta < eps" << std::endl;
-            std::cout << "Result: x = ";
-            PrintArray(n, x);
-            std::cout << "Count: " << count << std::endl;
+            //std::cout << "betta < eps" << std::endl;
+            //std::cout << "Result: x = ";
+            //PrintArray(n, x);
+            //std::cout << "Count: " << count << std::endl;
             break;
         }
         if (Norma(r, n) < eps) {
-            std::cout << "||r|| < eps" << std::endl;
-            std::cout << "Result: x = ";
-            PrintArray(n, x);
-            std::cout << "Count: " << count << std::endl;
+            //std::cout << "||r|| < eps" << std::endl;
+            //std::cout << "Result: x = ";
+            //PrintArray(n, x);
+            //std::cout << "Count: " << count << std::endl;
             break;
         }
         if (count == max_iter) {
-            std::cout << "Exceeded the number of allowed iterations" << std::endl;
-            std::cout << "Result: x = ";
-            PrintArray(n, x);
+            //std::cout << "Exceeded the number of allowed iterations" << std::endl;
+            //std::cout << "Result: x = ";
+            //PrintArray(n, x);
             break;
         }
 
         Addition(r, p, p, beta, n);
         Addition(r_, p_, p_, beta, n);
     }
+
+    delete[] r;
+    delete[] r_prev;
+    delete[] r_;
+    delete[] r_prev_;
+    delete[] p;
+    delete[] p_;
+    delete[] tmp;
 }
 
 int main(int argc, char* argv[]) {
