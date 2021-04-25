@@ -1,19 +1,10 @@
 #include <iostream>
 #include <vector>
 #include "omp.h"
+#include "preprocessing.h"
 #include <fstream>
 
 using namespace std;
-
-struct CRSMatrix
-{
-    int n;
-    int m;
-    int nz;
-    vector<double> val;
-    vector<int> colIndex;
-    vector<int> rowPtr;
-};
 
 template <typename T>
 void PrintVector(vector<T> a) {
@@ -44,7 +35,6 @@ void CopyArray(double* source, double* destination, int size) {
         destination[i] = source[i];
     }
 }
-
 
 void GetR0(CRSMatrix& A, double* x0, double* b, double* r) {
 #pragma omp parallel for
@@ -219,42 +209,23 @@ void SLE_Solver_CRS_BICG(CRSMatrix& A, double* b, double eps, int max_iter, doub
 }
 
 int main(int argc, char* argv[]) {
-    /*if (argc < 2) {
+    if (argc < 2) {
         std::cout << "ERROR: incorrect arguments count" << std::endl;
         return -1;
-    }*/
+    }
 
-    /*vector<double> v = { 10, -2, 3, 9, 3, 7, 8, 7, 3, 8, 7, 5, 8, 9, 9, 13, 4, 2, -1};
-    vector<int> colIndex = { 0, 3, 0, 1, 5, 1, 2, 3, 0, 2, 3, 4, 1, 3, 4, 5, 1, 4, 5};
-    vector<int> rowPtr = { 0, 2, 5, 8, 12, 16, 19};
+    const char* file_path = argv[1];
 
-    CRSMatrix matrix = {};
-    matrix.n = 6;
-    matrix.m = 6;
-    matrix.val = v;
-    matrix.colIndex = colIndex;
-    matrix.rowPtr = rowPtr;
-    matrix.nz = matrix.val.size();
+    int n = 3;
 
+    CRSMatrix matrix;
+    double* b = new double[n * sizeof(double)];
+    double* x = new double[n * sizeof(double)];
 
-    double b[] = {1, 1, 1, 1, 1, 1};*/
-
-    vector<double> v = { 2, 1, 1, 1, -1, 3, -1, 2};
-    vector<int> colIndex = { 0, 1, 2, 0, 1, 0, 1, 2};
-    vector<int> rowPtr = { 0, 3, 5, 8};
-    CRSMatrix matrix = {};
-    matrix.n = 3;
-    matrix.m = 3;
-    matrix.val = v;
-    matrix.colIndex = colIndex;
-    matrix.rowPtr = rowPtr;
-    matrix.nz = matrix.val.size();
-    double b[] = {2, -2, 2};
-
-    double* x = new double[matrix.n * sizeof(double)];
+    ReadMatrixFromFile(file_path, matrix, b);
 
     int count = 0;
-    SLE_Solver_CRS_BICG(matrix, b, 0.001, 100, x, count);
+    SLE_Solver_CRS_BICG(matrix, b, 0.001, 100, &(*x), count);
 
     return 0;
 }
