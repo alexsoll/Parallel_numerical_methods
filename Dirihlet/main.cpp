@@ -53,7 +53,7 @@ void heat_dirichlet_sor(heat_task task, double* v) {
 #pragma omp parallel for
     for (int i = 0; i <= task.n; i++) {
         for (int j = 0; j <= task.m; j++) {
-            f[i][j] = - task.f(i * h, j * k);
+            f[i][j] = -task.f(i * h, j * k);
         }
     }
 
@@ -64,26 +64,21 @@ void heat_dirichlet_sor(heat_task task, double* v) {
     do {
         err = 0.;
         for (int k = 0; k < task.n + task.m - 3; k++) {
-#pragma omp parallel for private(j, tmp, prev)
+            //#pragma omp parallel for private(j, tmp, prev)
             for (int i = min(1 + k, task.n - 1); i >= max(1, k - task.m + 3); i--) {
                 j = task.m - (k - i + 2);
 
                 prev = nu[i][j];
-                tmp = - D * prev + h_ * (nu[i - 1][j] + nu[i + 1][j]) + k_ * (nu[i][j - 1] + nu[i][j + 1]);
+                tmp = -D * prev + h_ * (nu[i - 1][j] + nu[i + 1][j]) + k_ * (nu[i][j - 1] + nu[i][j + 1]);
 
                 nu[i][j] = prev + omega * (tmp + f[i][j]) / D;
 
                 tmp = fabs(nu[i][j] - prev);
 
-#pragma omp critical
-                {
-                    if (tmp > err) {
-                        err = tmp;
-                    }
-                }
+                if (tmp > err) err = tmp;
             }
         }
-    } while (tmp > eps);
+    } while (err > eps);
 
 #pragma omp parallel for
     for (int i = 0; i <= task.n; i++)
