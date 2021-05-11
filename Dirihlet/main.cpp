@@ -2,11 +2,13 @@
 #include <vector>
 #include "omp.h"
 #include <fstream>
+#include <chrono>
 
 #define _USE_MATH_DEFINES
 #include <math.h>
 
-using namespace std;    
+using namespace std;
+using namespace std::chrono;
 
 class heat_task {
 public:
@@ -32,20 +34,18 @@ void heat_dirichlet_sor(heat_task task, double* v) {
 
     double D = 2 * (h_ + k_);
 
-    double eps = 1e-15;
-
-    vector<vector<double>> nu(task.n + 1, vector<double>(task.m + 1, 0.0));
+    double eps = 1e-10;
 
     // Boundary
 #pragma omp parallel for
     for (int i = 0; i <= task.n; i++) {
-        nu[i][0] = task.bottom_condition(i * h);
-        nu[i][task.m] = task.top_condition(i * h);
+        v[i * (task.m + 1)] = task.bottom_condition(i * h);
+        v[i * (task.m + 1) + task.m] = task.top_condition(i * h);
     }
 #pragma omp parallel for
-    for (int i = 0; i <= task.m; i++) {
-        nu[0][i] = task.left_condition(i * k);
-        nu[task.n][i] = task.right_condition(i * k);
+    for (int j = 0; j <= task.m; j++) {
+        v[j] = task.left_condition(j * k);
+        v[task.n * (task.m + 1) + j] = task.right_condition(j * k);
     }
 
     // The function of external impact
@@ -58,36 +58,81 @@ void heat_dirichlet_sor(heat_task task, double* v) {
     }
 
     int j;
+    int NT;
     double tmp;
     double err;
     double prev;
+
+    int top_index;
+    int bot_index;
+    int left_index;
+    int right_index;
+    int curr_index;
+
+
+#pragma omp parallel sections
+    {
+        NT = omp_get_num_threads();
+    }
+
+    double* errs = new double[NT];
+
+
     do {
         err = 0.;
-        for (int k = 0; k < task.n + task.m - 3; k++) {
-            //#pragma omp parallel for private(j, tmp, prev)
-            for (int i = min(1 + k, task.n - 1); i >= max(1, k - task.m + 3); i--) {
-                j = task.m - (k - i + 2);
-
-                prev = nu[i][j];
-                tmp = -D * prev + h_ * (nu[i - 1][j] + nu[i + 1][j]) + k_ * (nu[i][j - 1] + nu[i][j + 1]);
-
-                nu[i][j] = prev + omega * (tmp + f[i][j]) / D;
-
-                tmp = fabs(nu[i][j] - prev);
-
-                if (tmp > err) err = tmp;
-            }
-        }
-    } while (err > eps);
 
 #pragma omp parallel for
-    for (int i = 0; i <= task.n; i++)
-    {
-        for (int j = 0; j <= task.m; j++)
-        {
-            v[i * (task.m + 1) + j] = nu[i][j];
+        for (int i = 0; i < NT; ++i) {
+            errs[i] = 0.;
         }
-    }
+
+        for (int k = 0; k < task.n + task.m - 3; ++k) {
+            int start = min(1 + k, task.n - 1);
+            int finish = max(1, k - task.m + 3);
+
+#pragma omp parallel for private(j, tmp, prev, curr_index, top_index, bot_index, left_index, right_index)
+            for (int i = start; i >= finish; --i) {
+
+                int tid = omp_get_thread_num();
+
+                j = task.m - (k - i + 2);
+
+                curr_index = i * (task.m + 1) + j;
+
+                top_index = curr_index + 1;
+                bot_index = curr_index - 1;
+                left_index = curr_index - (task.m + 1);
+                right_index = curr_index + (task.m + 1);
+
+                prev = v[curr_index];
+
+                v[curr_index] = -D * prev;
+                v[curr_index] += h_ * v[left_index];
+                v[curr_index] += h_ * v[right_index];
+                v[curr_index] += k_ * v[bot_index];
+                v[curr_index] += k_ * v[top_index];
+                v[curr_index] += f[i][j];
+                v[curr_index] *= omega;
+                v[curr_index] += D * prev;
+                v[curr_index] /= D;
+
+                tmp = fabs(v[curr_index] - prev);
+
+                if (tmp > errs[tid]) {
+                    errs[tid] = tmp;
+                }
+
+                //if (tmp > err) err = tmp;
+            }
+        }
+
+        for (int i = 0; i < NT; ++i) {
+            if (errs[i] > err)
+                err = errs[i];
+        }
+
+    } while (err > eps);
+    delete[] errs;
 }
 
 void PrintArray(int size, double* a) {
@@ -102,7 +147,15 @@ int main(int argc, char* argv[]) {
     heat_task t;
     double* v = new double[(t.n + 1) * (t.m + 1)];
 
+    high_resolution_clock::time_point t1 = high_resolution_clock::now();
+
     heat_dirichlet_sor(t, v);
+
+    high_resolution_clock::time_point t2 = high_resolution_clock::now();
+
+    duration<double, std::milli> time_span = t2 - t1;
+
+    std::cout << "Duration time: " << time_span.count() << " milliseconds.";
     
     PrintArray((t.n + 1) * (t.m + 1), v);
     
